@@ -23,7 +23,7 @@ if(NOT TARGET hermesvm)
   )
 
   if(CMAKE_SYSTEM_NAME MATCHES "iOS")
-    if(CMAKE_OSX_SYSROOT MATCHES "simulator")
+    if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
       set(hermes_framework "${hermes}/destroot/Library/Frameworks/universal/hermesvm.xcframework/ios-arm64_x86_64-simulator/hermesvm.framework")
     else()
       set(hermes_framework "${hermes}/destroot/Library/Frameworks/universal/hermesvm.xcframework/ios-arm64/hermesvm.framework")
