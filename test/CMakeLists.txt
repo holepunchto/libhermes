@@ -5,8 +5,12 @@ list(APPEND tests
   add-teardown-callback
   add-teardown-callback-deferred
   add-teardown-callback-deferred-remove
+  add-teardown-callback-deferred-twice
+  add-teardown-callback-drained
   add-teardown-callback-multiple
   add-teardown-callback-remove
+  add-teardown-callback-remove-twice
+  add-teardown-callback-twice
   add-type-tag
   add-type-tag-delegate
   add-type-tag-twice
@@ -19,6 +23,7 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  call-function-throw-in-task
   call-function-with-checkpoint
   call-threadsafe-function-after-release
   call-threadsafe-function-with-data
@@ -26,6 +31,8 @@ list(APPEND tests
   check-type-tag-not-tagged
   coerce-number-to-string
   coerce-object-to-string
+  coerce-object-to-string-call-function-throw
+  coerce-object-to-string-microtask
   coerce-string-to-number
   coerce-symbol-to-string
   coerce-to-boolean
@@ -64,6 +71,7 @@ list(APPEND tests
   create-env-multiple-concurrent
   create-env-multiple-isolated
   create-env-multiple-microtask
+  create-env-multiple-nested
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
@@ -75,6 +83,8 @@ list(APPEND tests
   create-external-string-latin1-with-finalizer
   create-external-string-utf16le
   create-external-string-utf16le-with-finalizer
+  create-external-string-with-finalizer-collected
+  create-external-string-with-finalizer-internalized
   create-external-string-utf8
   create-external-string-utf8-with-finalizer
   create-external-with-finalizer
@@ -128,8 +138,11 @@ list(APPEND tests
   create-threadsafe-function-with-finalizer
   create-typed-errors
   create-typed-function
+  create-typed-function-call-throw
   create-typed-function-multiple
   create-typed-function-no-jit
+  create-typed-function-throw
+  create-typed-function-throw-nested
   create-typed-function-with-arraybuffer
   create-typed-function-with-bigint64
   create-typed-function-with-biguint64
@@ -175,6 +188,7 @@ list(APPEND tests
   dynamic-import-without-handler
   escapable-handle-scope
   fatal-exception
+  fatal-exception-without-handler
   freeze
   garbage-collection-tracking
   get-array-elements
@@ -238,6 +252,7 @@ list(APPEND tests
   get-value-string-utf8-length
   get-value-string-utf8-no-null
   get-value-string-utf8-truncate
+  handle-scope-nested
   has-element
   has-own-property
   has-property
@@ -245,8 +260,11 @@ list(APPEND tests
   import-meta-throw
   inspector
   inspector-attach-context
+  inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
+  inspector-profile-idle
+  inspector-response-throw
   instantiate-module-evaluating
   instantiate-module-throw-then-instantiate-other
   instantiate-module-throw-then-retry
@@ -259,6 +277,8 @@ list(APPEND tests
   is-boolean-object
   is-dataview
   is-date
+  is-detachable-arraybuffer
+  is-detachable-arraybuffer-wasm-memory
   is-detached-arraybuffer
   is-error
   is-external
@@ -310,11 +330,18 @@ list(APPEND tests
   promise-rejection-unhandled-continuation-variable
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  promise-rejection-unhandled-throw
+  promise-rejection-unhandled-throw-destroy-env
+  promise-rejection-unhandled-throw-nested
   queue-microtask
   queue-microtask-with-callback
+  queue-microtask-with-callback-terminate
+  queue-microtask-with-callback-throw
+  queue-microtask-with-callback-throw-without-handler
   reference-ref-unref-leaves-object-unchanged
   reference-unref
   reference-unref-with-finalizer
+  resolve-deferred-thenable-call-function-throw
   run-module
   run-module-async
   run-module-cyclic-import
@@ -343,7 +370,10 @@ list(APPEND tests
   threadsafe-function-context-acquire
   threadsafe-function-ref-unref
   throw-error
+  throw-error-code-setter
   throw-error-formatted
+  throw-error-then-resolve-deferred
+  throw-error-with-pending-finalizers
   throw-range-error
   throw-reference-error
   throw-syntax-error
@@ -385,7 +415,10 @@ list(APPEND skipped_tests
 
   # Not supported
   create-typed-function
+  create-typed-function-call-throw
   create-typed-function-multiple
+  create-typed-function-throw
+  create-typed-function-throw-nested
   create-typed-function-with-arraybuffer
   create-typed-function-with-bigint64
   create-typed-function-with-biguint64
@@ -406,8 +439,11 @@ list(APPEND skipped_tests
   # Not supported
   inspector
   inspector-attach-context
+  inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
+  inspector-profile-idle
+  inspector-response-throw
 
   # Not supported
   continuation-variable-promise-reaction
@@ -450,15 +486,20 @@ list(APPEND skipped_tests
   # Promises are implemented by a polyfill with obfuscated internal state
   create-promise-reject
   create-promise-resolve
+  throw-error-then-resolve-deferred
 
   # Rejection tracking is implemented by the Promise polyfill using timers
   promise-rejection-unhandled
   promise-rejection-unhandled-continuation-variable
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  promise-rejection-unhandled-throw
+  promise-rejection-unhandled-throw-destroy-env
+  promise-rejection-unhandled-throw-nested
 
   # ArrayBuffers can't be detached through JSI
   create-external-arraybuffer-with-finalizer-detach
+  is-detachable-arraybuffer
   is-detached-arraybuffer
 
   # Hermes owns the memory of the buffers it allocates and offers no way to
@@ -468,6 +509,7 @@ list(APPEND skipped_tests
   # Not implemented by Hermes
   atomics-wait-timeout
   atomics-wait-timeout-notify
+  call-function-throw-in-task
   create-external-sharedarraybuffer
   create-external-sharedarraybuffer-with-finalizer-null
   create-sharedarraybuffer
@@ -476,6 +518,7 @@ list(APPEND skipped_tests
   create-unsafe-sharedarraybuffer
   get-object-type-sharedarraybuffer
   get-sharedarraybuffer-info
+  is-detachable-arraybuffer-wasm-memory
   is-float16array
   is-sharedarraybuffer
   wasm
