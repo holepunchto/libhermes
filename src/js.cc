@@ -404,13 +404,29 @@ js__propagate_exception(js_env_t *env) {
   return js__error(env);
 }
 
+// Defines the code as an own data property, so that no setter on the
+// prototype chain runs when it is added.
+static void
+js__set_error_code(js_env_t *env, const jsi::Object &error, const jsi::Value &code) {
+  auto &rt = env->rt();
+
+  auto descriptor = jsi::Object(rt);
+
+  descriptor.setProperty(rt, "value", code);
+  descriptor.setProperty(rt, "writable", true);
+  descriptor.setProperty(rt, "enumerable", true);
+  descriptor.setProperty(rt, "configurable", true);
+
+  js__builtin(env, "Object", "defineProperty").call(rt, error, "code", descriptor);
+}
+
 static jsi::Value
 js__create_error(js_env_t *env, const char *type, const char *code, jsi::Value message) {
   auto &rt = env->rt();
 
   auto error = js__builtin(env, type).callAsConstructor(rt, message).getObject(rt);
 
-  if (code) error.setProperty(rt, "code", js__string(env, code));
+  if (code) js__set_error_code(env, error, js__string(env, code));
 
   return error;
 }
@@ -1891,9 +1907,17 @@ js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *
 
 extern "C" int
 js_create_date(js_env_t *env, double time, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
-  *result = js__attach(env, js__builtin(env, "Date").callAsConstructor(env->rt(), time));
+  std::optional<jsi::Value> value;
+
+  int err = js__call_into_engine(env, [&] {
+    value.emplace(js__builtin(env, "Date").callAsConstructor(env->rt(), time));
+  });
+
+  if (err < 0) return err;
+
+  *result = js__attach(env, std::move(*value));
 
   return 0;
 }
@@ -1904,7 +1928,7 @@ js__create_error(js_env_t *env, const char *type, js_value_t *code, js_value_t *
 
   auto error = js__builtin(env, type).callAsConstructor(rt, js__value(message)).getObject(rt);
 
-  if (code) error.setProperty(rt, "code", js__value(code));
+  if (code) js__set_error_code(env, error, js__value(code));
 
   *result = js__attach(env, std::move(error));
 
@@ -1959,7 +1983,7 @@ js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *res
 
 extern "C" int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
   auto &rt = env->rt();
 
@@ -1977,12 +2001,22 @@ js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise)
     }
   );
 
-  auto value = js__builtin(env, "Promise").callAsConstructor(rt, executor);
+  std::optional<jsi::Value> value;
+
+  int err = js__call_into_engine(env, [&] {
+    value.emplace(js__builtin(env, "Promise").callAsConstructor(rt, executor));
+  });
+
+  if (err < 0) {
+    delete result;
+
+    return err;
+  }
 
   intrusive_list_prepend(&env->deferreds, &result->list);
 
   *deferred = result;
-  *promise = js__attach(env, std::move(value));
+  *promise = js__attach(env, std::move(*value));
 
   return 0;
 }
@@ -2002,14 +2036,14 @@ js__conclude_deferred(js_env_t *env, js_deferred_t *deferred, const jsi::Value &
 
 extern "C" int
 js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
   return js__conclude_deferred(env, deferred, *deferred->resolve, resolution);
 }
 
 extern "C" int
 js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
   return js__conclude_deferred(env, deferred, *deferred->reject, resolution);
 }
@@ -2481,6 +2515,7 @@ JS_PREDICATE(js_is_weak_set, js__is_instance_of(env, local, "WeakSet"))
 JS_PREDICATE(js_is_weak_ref, js__is_instance_of(env, local, "WeakRef"))
 JS_PREDICATE(js_is_arraybuffer, local.isObject() && local.getObject(rt).isArrayBuffer(rt))
 JS_PREDICATE(js_is_detached_arraybuffer, local.isObject() && local.getObject(rt).isArrayBuffer(rt) && local.getObject(rt).getArrayBuffer(rt).detached(rt))
+JS_PREDICATE(js_is_detachable_arraybuffer, false)
 JS_PREDICATE(js_is_sharedarraybuffer, false)
 JS_PREDICATE(js_is_typedarray, local.isObject() && local.getObject(rt).isTypedArray(rt))
 JS_PREDICATE(js_is_int8array, js__get_tag(env, local) == "Int8Array")
@@ -3569,16 +3604,18 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
 
 extern "C" int
 js_queue_microtask(js_env_t *env, js_value_t *function) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
   env->rt().queueMicrotask(js__object(env, function).getFunction(env->rt()));
+
+  if (env->depth == 0) js__run_microtasks(env);
 
   return 0;
 }
 
 extern "C" int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
-  // Allow continuing even with a pending exception
+  if (env->exception) return js__error(env);
 
   auto &rt = env->rt();
 
@@ -3611,6 +3648,8 @@ js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
   );
 
   rt.queueMicrotask(function);
+
+  if (env->depth == 0) js__run_microtasks(env);
 
   return 0;
 }
@@ -3965,6 +4004,26 @@ extern "C" int
 js_add_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data) {
   if (env->exception) return js__error(env);
 
+  int err;
+
+  if (env->destroying) {
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  intrusive_list_for_each(next, &env->teardown_queue.tasks) {
+    auto task = intrusive_entry(next, js_teardown_task_t, list);
+
+    if (task->type == js_teardown_task_t::js_immediate_teardown && task->immediate.cb == callback && task->data == data) {
+      err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+      assert(err == 0);
+
+      return js__error(env);
+    }
+  }
+
   auto task = new js_teardown_task_t();
 
   task->type = js_teardown_task_t::js_immediate_teardown;
@@ -3980,6 +4039,8 @@ extern "C" int
 js_remove_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data) {
   if (env->exception) return js__error(env);
 
+  int err;
+
   if (env->destroying) return 0;
 
   intrusive_list_for_each(next, &env->teardown_queue.tasks) {
@@ -3994,12 +4055,35 @@ js_remove_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data) 
     }
   }
 
-  return 0;
+  err = js_throw_error(env, NULL, "Teardown callback has not been registered");
+  assert(err == 0);
+
+  return js__error(env);
 }
 
 extern "C" int
 js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result) {
   if (env->exception) return js__error(env);
+
+  int err;
+
+  if (env->destroying) {
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  intrusive_list_for_each(next, &env->teardown_queue.tasks) {
+    auto task = intrusive_entry(next, js_teardown_task_t, list);
+
+    if (task->type == js_teardown_task_t::js_deferred_teardown && task->deferred.cb == callback && task->data == data) {
+      err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+      assert(err == 0);
+
+      return js__error(env);
+    }
+  }
 
   auto task = new js_teardown_task_t();
 
@@ -4146,6 +4230,8 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 extern "C" int
 js_fatal_exception(js_env_t *env, js_value_t *error) {
   // Allow continuing even with a pending exception
+
+  if (env->callbacks.uncaught_exception == NULL) return 0;
 
   js__on_uncaught_exception(env, js__copy(env, js__value(error)));
 
