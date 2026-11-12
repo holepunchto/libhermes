@@ -91,6 +91,9 @@ struct js_env_s {
   std::optional<jsi::Value> default_module_id;
   std::optional<jsi::Value> function_id_key;
 
+  jsi::Value continuation_snapshot;
+  js_continuation_scope_t *continuation_scope;
+
   int64_t external_memory;
 
   std::atomic<bool> terminated;
@@ -128,6 +131,11 @@ struct js_handle_scope_s {
 
 struct js_escapable_handle_scope_s : js_handle_scope_s {};
 
+struct js_continuation_scope_s {
+  js_continuation_scope_t *parent;
+  jsi::Value previous;
+};
+
 struct js_script_s {
   std::shared_ptr<const jsi::PreparedJavaScript> prepared;
   std::optional<jsi::Value> id;
@@ -162,7 +170,17 @@ struct js_finalizer_s {
 
   void
   finalize() {
-    if (finalize_cb) finalize_cb(env, data, finalize_hint);
+    if (finalize_cb == NULL) return;
+
+    // Finalizers run from garbage collection, so they must not see the snapshot
+    // of whatever execution happened to trigger it.
+    auto previous = std::move(env->continuation_snapshot);
+
+    env->continuation_snapshot = jsi::Value::undefined();
+
+    finalize_cb(env, data, finalize_hint);
+
+    env->continuation_snapshot = std::move(previous);
   }
 };
 
@@ -632,6 +650,13 @@ js__close_env(js_env_t *env) {
   env->default_module_id.reset();
   env->function_id_key.reset();
 
+  while (env->continuation_scope) {
+    err = js_close_continuation_scope(env, env->continuation_scope);
+    assert(err == 0);
+  }
+
+  env->continuation_snapshot = jsi::Value::undefined();
+
   // Tearing down the runtime finalizes every remaining object, which in turn
   // invokes any outstanding finalizers while the environment is still alive.
   env->runtime.reset();
@@ -694,6 +719,8 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
   env->callbacks.unhandled_rejection_data = NULL;
 
   env->scope = NULL;
+
+  env->continuation_scope = NULL;
 
   err = js_open_handle_scope(env, &env->root_scope);
   assert(err == 0);
@@ -2668,6 +2695,130 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = jsi::Value::strictEquals(env->rt(), js__value(a), js__value(b));
+
+  return 0;
+}
+
+extern "C" int
+js_get_continuation_snapshot(js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js__attach(env, js__copy(env, env->continuation_snapshot));
+
+  return 0;
+}
+
+static inline void
+js__open_continuation_scope(js_env_t *env, jsi::Value snapshot, js_continuation_scope_t **result) {
+  auto scope = new js_continuation_scope_t();
+
+  scope->parent = env->continuation_scope;
+  scope->previous = std::move(env->continuation_snapshot);
+
+  env->continuation_scope = scope;
+  env->continuation_snapshot = std::move(snapshot);
+
+  *result = scope;
+}
+
+extern "C" int
+js_open_continuation_scope(js_env_t *env, js_value_t *snapshot, js_continuation_scope_t **result) {
+  // Allow continuing even with a pending exception
+
+  js__open_continuation_scope(env, snapshot ? js__copy(env, js__value(snapshot)) : jsi::Value::undefined(), result);
+
+  return 0;
+}
+
+extern "C" int
+js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope) {
+  // Allow continuing even with a pending exception
+
+  assert(env->continuation_scope == scope);
+
+  env->continuation_snapshot = std::move(scope->previous);
+  env->continuation_scope = scope->parent;
+
+  delete scope;
+
+  return 0;
+}
+
+// Snapshots are either `undefined` or a flat array of alternating keys and values
+// that is never changed once installed. The array is only built and read with
+// indexed access to elements it owns, which never reaches a getter, so no
+// JavaScript runs while an exception may be pending.
+
+extern "C" int
+js_get_continuation_variable(js_env_t *env, js_value_t *symbol, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto &rt = env->rt();
+
+  auto &key = js__value(symbol);
+
+  auto &snapshot = env->continuation_snapshot;
+
+  if (snapshot.isObject()) {
+    auto entries = snapshot.getObject(rt).getArray(rt);
+
+    for (size_t i = 0, n = entries.size(rt); i < n; i += 2) {
+      if (jsi::Value::strictEquals(rt, entries.getValueAtIndex(rt, i), key)) {
+        *result = js__attach(env, entries.getValueAtIndex(rt, i + 1));
+
+        return 0;
+      }
+    }
+  }
+
+  *result = js__attach(env, jsi::Value::undefined());
+
+  return 0;
+}
+
+extern "C" int
+js_open_continuation_variable_scope(js_env_t *env, js_value_t *symbol, js_value_t *value, js_continuation_scope_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto &rt = env->rt();
+
+  auto &key = js__value(symbol);
+
+  auto &local = js__value(value);
+
+  std::vector<jsi::Value> entries;
+
+  auto &snapshot = env->continuation_snapshot;
+
+  if (snapshot.isObject()) {
+    auto previous = snapshot.getObject(rt).getArray(rt);
+
+    for (size_t i = 0, n = previous.size(rt); i < n; i += 2) {
+      auto existing = previous.getValueAtIndex(rt, i);
+
+      if (jsi::Value::strictEquals(rt, existing, key)) continue;
+
+      entries.push_back(std::move(existing));
+      entries.push_back(previous.getValueAtIndex(rt, i + 1));
+    }
+  }
+
+  if (!local.isUndefined()) {
+    entries.push_back(js__copy(env, key));
+    entries.push_back(js__copy(env, local));
+  }
+
+  jsi::Value next = jsi::Value::undefined();
+
+  if (!entries.empty()) {
+    auto array = jsi::Array(rt, entries.size());
+
+    for (size_t i = 0; i < entries.size(); i++) array.setValueAtIndex(rt, i, entries[i]);
+
+    next = std::move(array);
+  }
+
+  js__open_continuation_scope(env, std::move(next), result);
 
   return 0;
 }
