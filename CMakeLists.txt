@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 4.0)
 
 find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
+find_package(cmake-prelude REQUIRED PATHS node_modules/cmake-prelude)
+find_package(cmake-test REQUIRED PATHS node_modules/cmake-test)
 
-project(js C CXX)
+project(js LANGUAGES C CXX VERSION 0.0.0)
+
+fetch_package("github:holepunchto/libintrusive")
 
 set(HERMES_VERSION "250829098.0.17" CACHE STRING "The version of the prebuilt Hermes to fetch")
 
@@ -51,23 +55,27 @@ if(NOT TARGET hermesvm)
   )
 endif()
 
-add_library(js OBJECT)
-
-fetch_package("github:holepunchto/libjs" SOURCE_DIR js)
-fetch_package("github:holepunchto/libintrusive")
-
-set_target_properties(
+add_library_targets(
   js
-  PROPERTIES
-  CXX_STANDARD 20
-  CXX_SCAN_FOR_MODULES OFF
-  POSITION_INDEPENDENT_CODE ON
+  FEATURES
+    c_std_99
+  SOURCES
+    src/js.cc
+  LINK
+    utf::<TYPE>
+  STATIC_LINK
+    uv_a
+    hermesvm
+  SHARED_LINK
+    uv
+    hermesvm
+  EXPORT OFF
 )
 
-target_sources(
+target_compile_features(
   js
   PRIVATE
-    src/js.cc
+    cxx_std_20
 )
 
 target_compile_definitions(
@@ -76,75 +84,27 @@ target_compile_definitions(
     JS_HERMES_VERSION="${HERMES_VERSION}"
 )
 
-target_include_directories(
-  js
-  INTERFACE
-    include
-  PUBLIC
-    ${js}/include
-    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
-  PRIVATE
-    $<TARGET_PROPERTY:intrusive,INTERFACE_INCLUDE_DIRECTORIES>
-)
-
 target_link_libraries(
   js
-  PUBLIC
+  PRIVATE
     hermesvm
-)
-
-add_library(js_shared SHARED)
-
-set_target_properties(
-  js_shared
-  PROPERTIES
-  OUTPUT_NAME js
+    intrusive::headers
 )
 
 target_include_directories(
-  js_shared
+  js_headers
   INTERFACE
-    $<TARGET_PROPERTY:js,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
-target_link_libraries(
-  js_shared
-  PUBLIC
-    uv
-    utf_shared
-  PRIVATE
-    js
-)
+fetch_package("github:holepunchto/libjs" SOURCE_DIR js)
 
-add_library(js_static STATIC)
-
-set_target_properties(
-  js_static
-  PROPERTIES
-  OUTPUT_NAME js
-  PREFIX lib
-)
-
-target_include_directories(
-  js_static
+target_sources(
+  js_headers
   INTERFACE
-    $<TARGET_PROPERTY:js,INTERFACE_INCLUDE_DIRECTORIES>
+    FILE_SET HEADERS
+    BASE_DIRS ${js}/include
+    FILES ${js}/include/js.h
 )
 
-target_link_libraries(
-  js_static
-  PUBLIC
-    uv_a
-    utf_static
-  PRIVATE
-    js
-)
-
-install(TARGETS js_shared js_static)
-
-if(PROJECT_IS_TOP_LEVEL)
-  enable_testing()
-
-  add_subdirectory(test)
-endif()
+add_test_subdirectory(test)
