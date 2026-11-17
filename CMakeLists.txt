@@ -63,12 +63,13 @@ add_library_targets(
     src/js.cc
   LINK
     utf::<TYPE>
-  STATIC_LINK
-    uv_a
-    hermesvm
-  SHARED_LINK
-    uv
-    hermesvm
+    PRIVATE
+      intrusive::headers
+      hermesvm
+    STATIC
+      uv_a
+    SHARED
+      uv
   EXPORT OFF
 )
 
@@ -82,13 +83,6 @@ target_compile_definitions(
   js
   PRIVATE
     JS_HERMES_VERSION="${HERMES_VERSION}"
-)
-
-target_link_libraries(
-  js
-  PRIVATE
-    hermesvm
-    intrusive::headers
 )
 
 target_include_directories(
