@@ -85,20 +85,6 @@ target_compile_definitions(
     JS_HERMES_VERSION="${HERMES_VERSION}"
 )
 
-target_include_directories(
-  js_headers
-  INTERFACE
-    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
-)
-
 fetch_package("github:holepunchto/libjs" SOURCE_DIR js)
-
-target_sources(
-  js_headers
-  INTERFACE
-    FILE_SET HEADERS
-    BASE_DIRS ${js}/include
-    FILES ${js}/include/js.h
-)
 
 add_test_subdirectory(test)
