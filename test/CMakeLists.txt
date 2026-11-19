@@ -25,7 +25,12 @@ add_test_executables(
   call-function-throw.c
   call-function-throw-in-task.c
   call-function-with-checkpoint.c
+  call-threadsafe-function-after-destroy-env.c
   call-threadsafe-function-after-release.c
+  call-threadsafe-function-blocking.c
+  call-threadsafe-function-burst.c
+  call-threadsafe-function-destroy-env.c
+  call-threadsafe-function-queue-limit.c
   call-threadsafe-function-with-data.c
   check-type-tag-from-prototype.c
   check-type-tag-not-tagged.c
@@ -74,6 +79,7 @@ add_test_executables(
   create-env-multiple-nested.c
   create-external.c
   create-external-arraybuffer.c
+  create-external-arraybuffer-backing-store-destroy-env.c
   create-external-arraybuffer-with-finalizer.c
   create-external-arraybuffer-with-finalizer-detach.c
   create-external-arraybuffer-with-finalizer-null.c
@@ -81,12 +87,12 @@ add_test_executables(
   create-external-sharedarraybuffer-with-finalizer-null.c
   create-external-string-latin1.c
   create-external-string-latin1-with-finalizer.c
+  create-external-string-utf8.c
+  create-external-string-utf8-with-finalizer.c
   create-external-string-utf16le.c
   create-external-string-utf16le-with-finalizer.c
   create-external-string-with-finalizer-collected.c
   create-external-string-with-finalizer-internalized.c
-  create-external-string-utf8.c
-  create-external-string-utf8-with-finalizer.c
   create-external-with-finalizer.c
   create-external-with-finalizer-destroy-env.c
   create-function.c
@@ -102,8 +108,8 @@ add_test_executables(
   create-module-import-missing.c
   create-module-with-code-cache.c
   create-module-with-code-cache-rejected.c
-  create-object-with-properties.c
   create-object-with-prototype.c
+  create-object-with-properties.c
   create-promise-reject.c
   create-promise-resolve.c
   create-property-key.c
@@ -126,16 +132,23 @@ add_test_executables(
   create-sharedarraybuffer.c
   create-sharedarraybuffer-with-backing-store.c
   create-sharedarraybuffer-with-backing-store-across-envs.c
+  create-snapshot.c
+  create-snapshot-with-inspector.c
+  create-snapshot-with-threadsafe-function.c
   create-string-latin1.c
   create-string-too-long.c
-  create-string-utf16le.c
   create-string-utf8.c
   create-string-utf8-with-null.c
+  create-string-utf16le.c
   create-synthetic-module-code-cache.c
   create-threadsafe-function.c
+  create-threadsafe-function-destroy-env.c
+  create-threadsafe-function-during-destroy-env.c
   create-threadsafe-function-with-callback.c
   create-threadsafe-function-with-context.c
   create-threadsafe-function-with-finalizer.c
+  create-threadsafe-function-with-finalizer-destroy-env.c
+  create-threadsafe-function-with-function-destroy-env.c
   create-typed-errors.c
   create-typed-function.c
   create-typed-function-call-throw.c
@@ -148,18 +161,18 @@ add_test_executables(
   create-typed-function-with-biguint64.c
   create-typed-function-with-dataview.c
   create-typed-function-with-finalizer.c
+  create-typed-function-with-int8array.c
   create-typed-function-with-int32.c
   create-typed-function-with-int64.c
-  create-typed-function-with-int8array.c
   create-typed-function-with-number.c
   create-typed-function-with-pointer.c
   create-typed-function-with-pointer-return.c
   create-typed-function-with-receiver.c
   create-typed-function-with-string-latin1.c
   create-typed-function-with-string-utf16le.c
+  create-typed-function-with-uint8array.c
   create-typed-function-with-uint32.c
   create-typed-function-with-uint64.c
-  create-typed-function-with-uint8array.c
   create-uint8array.c
   create-unsafe-arraybuffer.c
   create-unsafe-sharedarraybuffer.c
@@ -172,6 +185,7 @@ add_test_executables(
   define-properties.c
   delete-element.c
   delete-property.c
+  destroy-context-with-finalizer.c
   dynamic-import.c
   dynamic-import-function-handler.c
   dynamic-import-handler-code-cache.c
@@ -187,6 +201,7 @@ add_test_executables(
   dynamic-import-with-referrer-script.c
   dynamic-import-without-handler.c
   escapable-handle-scope.c
+  external-references.c
   fatal-exception.c
   fatal-exception-without-handler.c
   freeze.c
@@ -258,6 +273,9 @@ add_test_executables(
   has-property.c
   import-meta.c
   import-meta-throw.c
+  instantiate-module-evaluating.c
+  instantiate-module-throw-then-instantiate-other.c
+  instantiate-module-throw-then-retry.c
   inspector.c
   inspector-attach-context.c
   inspector-evaluate-call-function-throw.c
@@ -265,9 +283,6 @@ add_test_executables(
   inspector-pause.c
   inspector-profile-idle.c
   inspector-response-throw.c
-  instantiate-module-evaluating.c
-  instantiate-module-throw-then-instantiate-other.c
-  instantiate-module-throw-then-retry.c
   is-arguments.c
   is-array.c
   is-arraybuffer.c
@@ -286,10 +301,10 @@ add_test_executables(
   is-float32array.c
   is-float64array.c
   is-generator.c
-  is-int16array.c
-  is-int32-uint32.c
-  is-int32array.c
   is-int8array.c
+  is-int16array.c
+  is-int32array.c
+  is-int32-uint32.c
   is-map.c
   is-map-iterator.c
   is-module-namespace.c
@@ -303,10 +318,10 @@ add_test_executables(
   is-string-object.c
   is-symbol-object.c
   is-typedarray.c
-  is-uint16array.c
-  is-uint32array.c
   is-uint8array.c
   is-uint8clampedarray.c
+  is-uint16array.c
+  is-uint32array.c
   is-weak-map.c
   is-weak-ref.c
   is-weak-set.c
@@ -342,6 +357,20 @@ add_test_executables(
   reference-unref.c
   reference-unref-with-finalizer.c
   resolve-deferred-thenable-call-function-throw.c
+  run-from-snapshot.c
+  run-from-snapshot-add-finalizer.c
+  run-from-snapshot-continuation-variable.c
+  run-from-snapshot-delegate.c
+  run-from-snapshot-dynamic-import.c
+  run-from-snapshot-error-stack.c
+  run-from-snapshot-function.c
+  run-from-snapshot-import-meta.c
+  run-from-snapshot-module.c
+  run-from-snapshot-object-global.c
+  run-from-snapshot-script.c
+  run-from-snapshot-script-dynamic-import.c
+  run-from-snapshot-webassembly.c
+  run-from-snapshot-wrap.c
   run-module.c
   run-module-async.c
   run-module-cyclic-import.c
@@ -365,10 +394,15 @@ add_test_executables(
   set-prototype.c
   symbol-for.c
   terminate-execution.c
-  threads.c
-  threads-platform-loop.c
+  terminate-execution-call-api.c
+  terminate-execution-call-constructor.c
+  terminate-execution-call-function.c
+  threadsafe-function-abort-blocked-call.c
   threadsafe-function-context-acquire.c
   threadsafe-function-ref-unref.c
+  threadsafe-function-release-concurrent.c
+  threads.c
+  threads-platform-loop.c
   throw-error.c
   throw-error-code-setter.c
   throw-error-formatted.c
@@ -451,8 +485,29 @@ add_test_executables(
     garbage-collection-tracking.c
     get-error-location.c
 
+    # Not supported
+    create-snapshot.c
+    create-snapshot-with-inspector.c
+    create-snapshot-with-threadsafe-function.c
+    external-references.c
+    run-from-snapshot.c
+    run-from-snapshot-add-finalizer.c
+    run-from-snapshot-continuation-variable.c
+    run-from-snapshot-delegate.c
+    run-from-snapshot-dynamic-import.c
+    run-from-snapshot-error-stack.c
+    run-from-snapshot-function.c
+    run-from-snapshot-import-meta.c
+    run-from-snapshot-module.c
+    run-from-snapshot-object-global.c
+    run-from-snapshot-script.c
+    run-from-snapshot-script-dynamic-import.c
+    run-from-snapshot-webassembly.c
+    run-from-snapshot-wrap.c
+
     # Hermes has no realms
     call-function-in-context.c
+    destroy-context-with-finalizer.c
     get-object-global.c
     prepare-script-in-context.c
     prepare-script-multiple-contexts.c
@@ -467,6 +522,7 @@ add_test_executables(
     define-class-with-symbol-property.c
     define-class-with-value.c
     get-new-target.c
+    terminate-execution-call-constructor.c
 
     # Native state can't be attached to proxies
     add-type-tag-delegate.c
