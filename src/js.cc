@@ -253,6 +253,7 @@ struct js_threadsafe_function_s {
   size_t queue_limit;
   status state;
   size_t thread_count;
+  bool aborted;
   std::atomic<uint8_t> dispatch_state;
   bool handle_closing;
   void *context;
@@ -3980,7 +3981,7 @@ js__threadsafe_function_call(js_threadsafe_function_t *function) {
   {
     std::unique_lock guard(function->lock);
 
-    if (!function->queue.empty()) {
+    if (!function->aborted && !function->queue.empty()) {
       data = function->queue.front();
 
       function->queue.pop_front();
@@ -3990,7 +3991,7 @@ js__threadsafe_function_call(js_threadsafe_function_t *function) {
       function->available.notify_one();
     }
 
-    drained = function->queue.empty() && function->state != js_threadsafe_function_t::status::open;
+    drained = (function->aborted || function->queue.empty()) && function->state != js_threadsafe_function_t::status::open;
   }
 
   if (popped) {
@@ -4093,6 +4094,7 @@ js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_
   threadsafe_function->queue_limit = queue_limit;
   threadsafe_function->state = js_threadsafe_function_t::status::open;
   threadsafe_function->thread_count = initial_thread_count;
+  threadsafe_function->aborted = false;
   threadsafe_function->dispatch_state = js_threadsafe_function_idle;
   threadsafe_function->handle_closing = false;
   threadsafe_function->context = context;
@@ -4178,6 +4180,7 @@ js_release_threadsafe_function(js_threadsafe_function_t *function, js_threadsafe
 
     if ((function->thread_count == 0 || mode == js_threadsafe_function_abort) && function->state == js_threadsafe_function_t::status::open) {
       function->state = js_threadsafe_function_t::status::closing;
+      function->aborted = mode == js_threadsafe_function_abort;
 
       function->available.notify_all();
 
